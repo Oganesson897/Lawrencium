@@ -1,0 +1,31 @@
+repositories {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name 'CurseMaven'
+                url 'https://cursemaven.com'
+            }
+        }
+        filter {
+            includeGroup 'curse.maven'
+        }
+    }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name 'Modrinth'
+                url 'https://api.modrinth.com/maven'
+            }
+        }
+        filter {
+            includeGroup 'maven.modrinth'
+        }
+    }
+    maven {url 'https://maven.blamejared.com'}
+    maven {url 'https://maven.gtceu.com'}
+    mavenLocal() // Must be last for caching to work
+}
+
+dependencies {
+
+}

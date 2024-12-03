@@ -1,0 +1,237 @@
+import com.gtnewhorizons.retrofuturagradle.mcp.InjectTagsTask
+import org.jetbrains.gradle.ext.Gradle
+
+plugins {
+    id 'java'
+    id 'maven-publish'
+    id 'java-library'
+    id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.7'
+    id 'com.gtnewhorizons.retrofuturagradle' version '1.3.35'
+}
+
+base {
+    archivesName.set(mod_id)
+}
+
+tasks.decompressDecompiledSources.enabled !Boolean.valueOf(change_minecraft_sources)
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(16))
+        vendor.set(JvmVendorSpec.AZUL)
+    }
+    if (Boolean.valueOf(generate_sources_jar)) withSourcesJar()
+    if (Boolean.valueOf(generate_javadocs_jar)) withJavadocJar()
+}
+
+configurations {
+    embed
+    implementation.extendsFrom(embed)
+}
+
+minecraft {
+    mcVersion.set("1.12.2")
+
+    mcpMappingChannel.set(mapping_channel) // Mapping Channel
+    mcpMappingVersion.set(mapping_version) // Mapping Version
+    useDependencyAccessTransformers.set(Boolean.valueOf(use_dependency_at_files))
+
+    username.set("Developer") // Test runtime player name
+
+    // Add various JVM arguments here for runtime
+    def args = ['-ea:' + group]
+    if (Boolean.valueOf(use_mixins)) {
+        args << '-Dmixin.hotSwap=true'
+        args << '-Dmixin.checks.interfaces=true'
+        args << '-Dmixin.debug.export=true'
+    }
+    extraRunJvmArguments.addAll(args)
+
+    // Auto-generate Tags class.
+    injectedTags.put("VERSION", mod_version)
+    injectedTags.put("MOD_NAME", mod_name)
+    injectedTags.put("MOD_ID", mod_id)
+}
+
+repositories {
+    maven {
+        name 'CleanroomMC Maven'
+        url 'https://maven.cleanroommc.com'
+    }
+}
+
+dependencies {
+    implementation 'org.jetbrains:annotations:24.0.0'
+
+    annotationProcessor 'com.github.bsideup.jabel:jabel-javac-plugin:1.0.0'
+    annotationProcessor 'net.java.dev.jna:jna-platform:5.13.0'
+    compileOnly ('com.github.bsideup.jabel:jabel-javac-plugin:1.0.0') {transitive = false}
+    patchedMinecraft 'me.eigenraven.java8unsupported:java-8-unsupported-shim:1.0.0'
+
+    if (Boolean.valueOf(use_mixins)) {
+        def mixin = modUtils.enableMixins('zone.rong:mixinbooter:9.3', "mixins.${mod_id}.refmap.json")
+        api (mixin) {transitive = false}
+        annotationProcessor 'org.ow2.asm:asm-debug-all:5.2'
+        annotationProcessor 'com.google.guava:guava:24.1.1-jre'
+        annotationProcessor 'com.google.code.gson:gson:2.8.6'
+        annotationProcessor (mixin) {transitive = false}
+    }
+}
+
+apply from: 'dependencies.gradle'
+
+if (!access_transformer.isEmpty()) {
+    for (def location : access_transformer.split(',')) {
+        def fileLocation = file("${projectDir}/src/main/resources/${location}")
+        if (fileLocation.exists()) {
+            tasks.deobfuscateMergedJarToSrg.accessTransformerFiles.from(fileLocation)
+            tasks.srgifyBinpatchedJar.accessTransformerFiles.from(fileLocation)
+        } else {
+            throw new GradleException("Access Transformer file [$fileLocation] does not exist!")
+        }
+    }
+}
+
+processResources {
+
+    def filterList = ['mcmod.info', 'pack.mcmeta']
+    filterList.addAll(mixin_configs.split(',').collect(config -> "mixins.${config}.json" as String))
+
+    filesMatching(filterList) { fcd ->
+        fcd.expand(
+                'mod_id': "${mod_id}",
+                'mod_name': "${mod_name}",
+                'mod_version': "${mod_version}",
+                'mixin_package': "${root_package}.${mod_id}.mixin"
+        )
+    }
+
+    if (!access_transformer.isEmpty()) {
+        rename '(.+_at.cfg)', 'META-INF/$1'
+    }
+
+}
+
+jar {
+    manifest {
+        def attribute_map = [:]
+        if (Boolean.valueOf(is_coremod)) {
+            attribute_map['FMLCorePlugin'] = coremod_plugin_class_name
+            if (Boolean.valueOf(coremod_includes_mod)) {
+                attribute_map['FMLCorePluginContainsFMLMod'] = true
+                def currentTasks = gradle.startParameter.taskNames
+                if (currentTasks[0] == 'build' || currentTasks[0] == 'prepareObfModsFolder' || currentTasks[0] == 'runObfClient') {
+                    attribute_map['ForceLoadAsMod'] = true
+                }
+            }
+        }
+        if (!access_transformer.isEmpty()) {
+            attribute_map['FMLAT'] = access_transformer
+        }
+        attributes(attribute_map)
+    }
+    // Add all embedded dependencies into the jar
+    from(provider{ configurations.embed.collect {it.isDirectory() ? it : zipTree(it)} })
+}
+
+idea {
+    module {
+        inheritOutputDirs = true
+    }
+    project {
+        settings {
+            runConfigurations {
+                "0. Setup Decomp Workspace"(Gradle) {
+                    taskNames = ["setupDecompWorkspace"]
+                }
+                "1. Run Client"(Gradle) {
+                    taskNames = ["runClient"]
+                }
+                "2. Run Server"(Gradle) {
+                    taskNames = ["runServer"]
+                }
+                "3. Run Obfuscated Client"(Gradle) {
+                    taskNames = ["runObfClient"]
+                }
+                "4. Run Obfuscated Server"(Gradle) {
+                    taskNames = ["runObfServer"]
+                }
+            }
+            compiler.javac {
+                afterEvaluate {
+                    javacAdditionalOptions = "-encoding utf8"
+                    moduleJavacAdditionalOptions = [
+                            (project.name + ".main"): tasks.compileJava.options.compilerArgs.collect { '"' + it + '"' }.join(' ')
+                    ]
+                }
+            }
+        }
+    }
+}
+
+tasks.register('generateMixinJson') {
+    group 'cleanroom helpers'
+    def missingConfig = mixin_configs.split(',').findAll(config -> !file("src/main/resources/mixins.${config}.json").exists())
+    onlyIf {
+        if (Boolean.valueOf(use_mixins) && Boolean.valueOf(generate_mixins_json)) {
+            return !missingConfig.empty
+        }
+        return false
+    }
+    doLast {
+        for (String mixinConfig : missingConfig) {
+            def file = file("src/main/resources/mixins.${mixinConfig}.json")
+            file << """{\n\t"package": "${root_package}.${mod_id}.mixin",\n\t"required": true,\n\t"refmap": "",\n\t"target": "@env(DEFAULT)",\n\t"minVersion": "0.8.5",\n\t"compatibilityLevel": "JAVA_8",\n\t"mixins": [],\n\t"server": [],\n\t"client": []\n}"""
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    if (it.name in ['compileMcLauncherJava', 'compilePatchedMcJava']) {
+        return
+    }
+    sourceCompatibility = 17
+    options.release.set(8)
+    javaCompiler.set(javaToolchains.compilerFor {
+        languageVersion.set(JavaLanguageVersion.of(16))
+        vendor.set(JvmVendorSpec.AZUL)
+    })
+}
+
+tasks.register('cleanroomAfterSync') {
+    group 'cleanroom helpers'
+    dependsOn 'injectTags', 'generateMixinJson'
+}
+
+tasks.withType(Javadoc).configureEach {
+    sourceCompatibility = 17
+}
+
+tasks.named('injectTags', InjectTagsTask).configure {
+    onlyIf {
+        return !it.getTags().get().isEmpty()
+    }
+    it.outputClassName.set("${root_package}.${mod_id}.Tags")
+}
+
+tasks.named('prepareObfModsFolder').configure {
+    finalizedBy 'prioritizeCoremods'
+}
+
+tasks.register('prioritizeCoremods') {
+    dependsOn 'prepareObfModsFolder'
+    doLast {
+        fileTree('run/obfuscated').forEach {
+            if (it.isFile() && it.name =~ '(mixinbooter|configanytime)(-)([0-9])+\\.+([0-9])+(.jar)') {
+                it.renameTo(new File(it.parentFile, "!${it.name}"))
+            }
+        }
+    }
+}
+
+idea.project.settings {
+    taskTriggers {
+        afterSync 'cleanroomAfterSync'
+    }
+}
