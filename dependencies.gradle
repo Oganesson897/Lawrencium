@@ -23,9 +23,28 @@ repositories {
     }
     maven {url 'https://maven.blamejared.com'}
     maven {url 'https://maven.gtceu.com'}
+    maven {url 'https://jitpack.io'}
     mavenLocal() // Must be last for caching to work
 }
 
 dependencies {
+    embed 'org.joml:joml:1.10.8'
 
+    implementation rfg.deobf("curse.maven:codechicken-lib-1-8-242818:2779848")
+    implementation rfg.deobf("curse.maven:censoredasm-460609:4800875")
+
+    // Test
+    implementation rfg.deobf("curse.maven:littletiles-257818:5180387")
+    implementation rfg.deobf("curse.maven:creativecore-257814:4722163")
+
+    //compileOnly rfg.deobf("com.github.jbredwards:fluidlogged-api:47f153989e") // Workable
+    compileOnly rfg.deobf("curse.maven:enderio-64578:4674244")
+    compileOnly rfg.deobf("curse.maven:endercore-231868:4671384")
+    compileOnly rfg.deobf("curse.maven:redstoneflux-270789:2920436")
+    compileOnly rfg.deobf("curse.maven:cofhcore-69162:2920433")
+    compileOnly rfg.deobf("curse.maven:cofhworld-271384:2920434")
+    compileOnly rfg.deobf("curse.maven:thermfound-222880:2926428")
+    compileOnly rfg.deobf("curse.maven:thermdyn-227443:2920505")
+    compileOnly rfg.deobf("curse.maven:ae2-223794:2747063")
+    compileOnly rfg.deobf("curse.maven:ie-231951:2974106")
 }
