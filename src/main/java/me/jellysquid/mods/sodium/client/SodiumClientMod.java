@@ -6,8 +6,8 @@ import me.oganesson.lawrencium.Tags;
 import org.apache.logging.log4j.Logger;
 
 public class SodiumClientMod {
-    public static final String MODID = "vintagium";
-    public static final String MODNAME = "Vintagium";
+    public static final String MODID = "lawrencium";
+    public static final String MODNAME = "Lawrencium";
     public static final String MOD_VERSION = Tags.VERSION;
 
     public static Logger logger() {
